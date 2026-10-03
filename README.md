@@ -13,8 +13,8 @@ Plugin screensavers render in a sandboxed WebView that cannot make network reque
 ## Install
 
 1. **Build the ZIP.** Either:
-   - **From a GitHub release (recommended).** Publish a release with a tag such as `v1.1.0`. The *Release* workflow tests, builds and attaches the ZIP, checksum and manifest that KS's **Install from GitHub** checks. Install from the repository in Plugin Manager and skip step 2.
-   - Push this folder to a GitHub repository. The *Build plugin ZIP* workflow builds it on every push. Download the `plex-photos-plugin` artifact from the Actions run and unzip it once to get `plex-photos-1.1.0.zip`.
+   - **From a GitHub release (recommended).** Publish a release with a tag such as `v1.2.0`. The *Release* workflow tests, builds and attaches the ZIP, checksum and manifest that KS's **Install from GitHub** checks. Install from the repository in Plugin Manager and skip step 2.
+   - Push this folder to a GitHub repository. The *Build plugin ZIP* workflow builds it on every push. Download the `plex-photos-plugin` artifact from the Actions run and unzip it once to get `plex-photos-1.2.0.zip`.
    - Or build locally with JDK 17+ and an Android SDK (platform 35, build-tools 35):
      ```sh
      git clone https://github.com/jxlarrea/kiosk-satellite-plugin-hello-world ks-sdk
@@ -22,24 +22,39 @@ Plugin screensavers render in a sandboxed WebView that cannot make network reque
      ```
      The ZIP lands in `ks-plex-photos/dist/`.
 2. In KS, open **Plugin Manager > Developer Tools > Install from ZIP** (on the kiosk or the remote admin at `http://<tablet-ip>:2324`), pick the ZIP, confirm, and enable **Plex Photos**.
-3. Fill in **Server address** and **Plex token** on the plugin page.
+3. On the plugin page, turn on **Sign in with Plex** and follow the code shown (see below).
 4. **Screensaver > Screensaver mode > Plex Photos (Plex Photos)**.
 
 To update, install the new ZIP over the old one. Settings carry over.
 
-### Finding your Plex token
+### Signing in
 
-Plex Web > any photo > **...** > **Get Info** > **View XML**. The URL of the page that opens ends in `X-Plex-Token=...`.
+Turn on **Sign in with Plex**. The kiosk shows a four-character code in a floating window, in the plugin status and, if nothing is set up yet, on the screensaver. On your phone or computer, open [plex.tv/link](https://plex.tv/link), sign in to Plex as usual and enter the code. Your Plex password is only ever typed on plex.tv.
 
-The token is stored in the plugin settings on the tablet and is visible in the remote admin. A Plex managed user restricted to the photo library limits what that token can reach.
+When the code is accepted, the plugin:
 
-The token found through **View XML** belongs to the account you are signed in as. If that is the server owner, the token can manage your whole Plex account, not just this server, so prefer a restricted managed user and keep the KS remote admin locked down.
+- finds your server and picks an address that answers on this network, trying the secure `plex.direct` HTTPS address first. Owned servers come before shared ones. To use a particular server, enter its **Server address** before signing in.
+- saves the token for that server, encrypted (see below), and switches **Sign in with Plex** off.
+
+Each kiosk signs in separately and appears under its own name in Plex's **Authorized Devices** list, so you can sign one kiosk out without affecting another. The code expires after about 15 minutes; tap **Cancel** in the window to stop early.
+
+Sign in as the Plex user whose photos the kiosk should show. A Plex Home user that can only see the photo library limits what the kiosk's token can reach. Signing in as the server owner gives the kiosk an owner-level token.
+
+You can still paste a token into **Plex token** instead (Plex Web > any photo > **...** > **Get Info** > **View XML**, the value after `X-Plex-Token=`). It is encrypted as soon as it is saved.
+
+### How the token is stored
+
+KS shows plugin settings in plain text, including in the remote admin. The plugin therefore stores the token encrypted with an AES key kept in this kiosk's Android Keystore. The key never leaves the tablet, so the saved value is useless if copied elsewhere.
+
+- This stops anyone who can see the settings from reading the token. It does not stop code running inside the KS app, such as another plugin, a modified KS or root access, from asking the Keystore to decrypt it. Keep the remote admin locked down, since it can install plugins.
+- If KS's app data is cleared or KS is reinstalled, the key is lost. The plugin then asks you to sign in again.
+- If a tablet cannot encrypt, the plugin says so in its status and stores the token unencrypted.
 
 ### Connecting securely
 
-The token travels with every request. Over plain `http://` anyone on the LAN who can see the traffic can read it. In order of preference:
+The token travels with every request. Over plain `http://` anyone on the LAN who can see the traffic can read it. Signing in picks the best address that works automatically. If you enter one yourself, in order of preference:
 
-1. **`plex.direct` HTTPS.** Plex issues a real certificate for each server. Use `https://192-168-1-20.<server-id>.plex.direct:32400`, with your LAN IP written with dashes. The full address is a `uri` in the `connections` list at `https://plex.tv/api/v2/resources?includeHttps=1&X-Plex-Token=...`. Leave **Accept self-signed HTTPS** off. Some routers block `plex.direct` names (DNS rebinding protection) and need an exception.
+1. **`plex.direct` HTTPS.** Plex issues a real certificate for each server. Use `https://192-168-1-20.<server-id>.plex.direct:32400`, with your LAN IP written with dashes. Leave **Accept self-signed HTTPS** off. Some routers block `plex.direct` names (DNS rebinding protection) and need an exception; sign-in then falls back to plain HTTP on the LAN.
 2. **`https://<LAN IP>:32400` with Accept self-signed HTTPS.** The certificate does not match the IP, so it is pinned instead: the first certificate the plugin sees is saved in **Server certificate fingerprint** and every later connection must present the same one. Clear the fingerprint if the server's certificate legitimately changes. For full protection, paste the fingerprint yourself before first use.
 3. **Plain `http://`.** Simplest. Only on a network you trust.
 
@@ -49,10 +64,12 @@ The plugin never follows redirects and refuses any path from Plex that would poi
 
 | Group | Setting | Notes |
 | --- | --- | --- |
-| Plex server | Server address | LAN address, e.g. `http://192.168.1.20:32400`. Plain HTTP on the LAN is the simplest; set Plex's *Secure connections* to *Preferred*. |
-| | Plex token | See above. |
+| Plex server | Sign in with Plex | Shows a code for plex.tv/link. Switches itself off when done. |
+| | Server address | Blank to find it at sign-in, or e.g. `http://192.168.1.20:32400`. |
+| | Plex token (encrypted) | Filled in by sign-in. A pasted token is encrypted when saved. |
 | | Accept self-signed HTTPS | Only for `https://<LAN IP>:32400` style addresses. Pins the server's certificate. |
 | | Server certificate fingerprint | SHA-256, filled in on first connection. Clear it to trust a new certificate. |
+| | Device ID | Identifies this kiosk to Plex. Filled in automatically. |
 | Photos | Photo libraries | Comma-separated names. Blank means every photo library. |
 | | Albums | Comma-separated names, matched case-insensitively, sub-albums included. Blank means the whole library. |
 | | Taken within | Any time, On this day (same date in earlier years, plus or minus three days), past month, 1, 2, 5 or 10 years. Photos with no taken date are excluded by any date filter. |
@@ -66,7 +83,7 @@ The plugin never follows redirects and refuses any path from Plex that would poi
 
 ## Commands
 
-**Next photo** and **Reload photo list from Plex** can be bound to KS gestures, added to the drawer, or exposed as ESPHome buttons in Home Assistant from the plugin page.
+**Next photo**, **Reload photo list from Plex** and **Sign in with Plex** can be bound to KS gestures, added to the drawer, or exposed as ESPHome buttons in Home Assistant from the plugin page.
 
 ## Limits
 

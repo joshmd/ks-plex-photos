@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package uk.dollow.kiosk.plexphotos;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -37,15 +36,19 @@ final class PlexClient {
     private final String base;
     private final URL baseUrl;
     private final String token;
+    private final String clientId;
+    private final String deviceName;
     private final PinningTrustManager pinning;
     private final SSLSocketFactory pinnedFactory;
     private volatile HttpURLConnection active;
     private volatile boolean aborted;
 
-    PlexClient(Config config) throws IOException {
+    PlexClient(Config config, String deviceName) throws IOException {
         base = config.serverUrl;
         baseUrl = new URL(base);
         token = config.token;
+        clientId = config.clientId;
+        this.deviceName = deviceName;
         if (config.allowInsecureTls) {
             if (!config.tlsFingerprintValid) {
                 throw new IOException("Server certificate fingerprint is not a SHA-256 value. Clear it to learn it again.");
@@ -246,8 +249,7 @@ final class PlexClient {
         c.setInstanceFollowRedirects(false);
         c.setRequestProperty("Accept", accept);
         c.setRequestProperty("X-Plex-Token", token);
-        c.setRequestProperty("X-Plex-Product", "Kiosk Satellite Plex Photos");
-        c.setRequestProperty("X-Plex-Client-Identifier", "ks-plex-photos");
+        PlexHttp.identify(c, clientId, deviceName);
         active = c;
         try {
             if (aborted) throw new IOException("Stopped");
@@ -255,15 +257,7 @@ final class PlexClient {
             if (code == 401) throw new IOException("Plex rejected the token (401)");
             if (code < 200 || code >= 300) throw new IOException("Plex returned HTTP " + code + " for " + redact(path));
             try (InputStream in = c.getInputStream()) {
-                ByteArrayOutputStream out = new ByteArrayOutputStream(64 * 1024);
-                byte[] buf = new byte[32 * 1024];
-                int total = 0;
-                for (int r; (r = in.read(buf)) != -1; ) {
-                    total += r;
-                    if (total > limit) throw new IOException("Response too large from Plex");
-                    out.write(buf, 0, r);
-                }
-                return out.toByteArray();
+                return PlexHttp.read(in, limit);
             }
         } finally {
             active = null;

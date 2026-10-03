@@ -3,29 +3,41 @@
   "apiVersion": 1,
   "id": "plex-photos",
   "name": "Plex Photos",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minAndroidSdk": 24,
   "entryClass": "uk.dollow.kiosk.plexphotos.PlexPhotosPlugin",
-  "description": "Photo-frame screensaver that pulls images straight from a Plex Media Server photo library, so you do not need Immich. Choose Plex Photos under Screensaver > Screensaver mode once the server address and token are set.",
+  "description": "Photo-frame screensaver that pulls images straight from a Plex Media Server photo library, so you do not need Immich. Turn on Sign in with Plex, then choose Plex Photos under Screensaver > Screensaver mode.",
   "author": "Josh Dollow",
   "license": "Apache-2.0",
-  "capabilities": ["screensaver", "host.read"],
+  "capabilities": [
+    "screensaver",
+    "host.read",
+    "overlay"
+  ],
   "settings": [
+    {
+      "key": "signIn",
+      "type": "boolean",
+      "title": "Sign in with Plex",
+      "default": false,
+      "group": "Plex server",
+      "description": "Shows a code to enter at plex.tv/link on your phone or computer. Switches itself off when sign-in finishes. Sign in as the Plex user whose photos this kiosk should show."
+    },
     {
       "key": "serverUrl",
       "type": "string",
       "title": "Server address",
       "default": "",
       "group": "Plex server",
-      "description": "Base URL of Plex Media Server, for example http://192.168.1.20:32400. Use the LAN address, not app.plex.tv."
+      "description": "Leave blank to find your server automatically when you sign in. Or enter its address, for example https://192-168-1-20.<id>.plex.direct:32400 or http://192.168.1.20:32400."
     },
     {
       "key": "token",
       "type": "string",
-      "title": "Plex token",
+      "title": "Plex token (encrypted)",
       "default": "",
       "group": "Plex server",
-      "description": "X-Plex-Token for an account or managed user that can see the photo library."
+      "description": "Filled in by Sign in with Plex and stored encrypted with a key that never leaves this kiosk. You can also paste a token here; it is encrypted when saved."
     },
     {
       "key": "allowInsecureTls",
@@ -42,6 +54,14 @@
       "default": "",
       "group": "Plex server",
       "description": "SHA-256 fingerprint of the Plex server certificate, used with Accept self-signed HTTPS. Filled in automatically on first connection. Clear it to trust a new certificate."
+    },
+    {
+      "key": "clientId",
+      "type": "string",
+      "title": "Device ID",
+      "default": "",
+      "group": "Plex server",
+      "description": "Identifies this kiosk to Plex, so each kiosk appears separately under Authorized Devices. Filled in automatically. Leave it alone."
     },
     {
       "key": "libraries",
@@ -64,7 +84,15 @@
       "type": "select",
       "title": "Taken within",
       "default": "Any time",
-      "options": ["Any time", "On this day", "Past month", "Past year", "Past 2 years", "Past 5 years", "Past 10 years"],
+      "options": [
+        "Any time",
+        "On this day",
+        "Past month",
+        "Past year",
+        "Past 2 years",
+        "Past 5 years",
+        "Past 10 years"
+      ],
       "group": "Photos",
       "description": "Date filter on the photo's taken date. On this day matches the same date, plus or minus three days, in any year."
     },
@@ -102,7 +130,11 @@
       "type": "select",
       "title": "Fill the screen",
       "default": "Smart",
-      "options": ["Off", "Smart", "Always"],
+      "options": [
+        "Off",
+        "Smart",
+        "Always"
+      ],
       "group": "Slideshow",
       "description": "Smart crops only photos already close to the screen's shape. Others sit over a blurred copy of themselves."
     },
@@ -111,7 +143,11 @@
       "type": "select",
       "title": "Transition",
       "default": "Crossfade",
-      "options": ["Crossfade", "Fade from black", "None"],
+      "options": [
+        "Crossfade",
+        "Fade from black",
+        "None"
+      ],
       "group": "Slideshow"
     },
     {
@@ -126,7 +162,12 @@
       "type": "select",
       "title": "Info corner",
       "default": "Bottom left",
-      "options": ["Bottom left", "Bottom right", "Top left", "Top right"],
+      "options": [
+        "Bottom left",
+        "Bottom right",
+        "Top left",
+        "Top right"
+      ],
       "group": "Slideshow",
       "description": "Pick a corner your KS widgets and clock do not use."
     },
@@ -143,7 +184,17 @@
     }
   ],
   "commands": [
-    { "id": "next", "title": "Next photo" },
-    { "id": "refresh", "title": "Reload photo list from Plex" }
+    {
+      "id": "next",
+      "title": "Next photo"
+    },
+    {
+      "id": "refresh",
+      "title": "Reload photo list from Plex"
+    },
+    {
+      "id": "signin",
+      "title": "Sign in with Plex"
+    }
   ]
 }

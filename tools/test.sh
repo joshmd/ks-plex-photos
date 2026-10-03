@@ -6,6 +6,6 @@ out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 pkg=src/uk/dollow/kiosk/plexphotos
 javac --release 8 -Xlint:-options -d "$out" \
-  "$pkg/Config.java" "$pkg/Dates.java" "$pkg/Html.java" "$pkg/Photo.java" "$pkg/PhotoCollector.java" "$pkg/Slide.java" \
+  "$pkg/Config.java" "$pkg/Dates.java" "$pkg/Html.java" "$pkg/Photo.java" "$pkg/PhotoCollector.java" "$pkg/Slide.java" "$pkg/TokenVault.java" \
   tests/uk/dollow/kiosk/plexphotos/LogicTest.java
 java -ea -cp "$out" uk.dollow.kiosk.plexphotos.LogicTest

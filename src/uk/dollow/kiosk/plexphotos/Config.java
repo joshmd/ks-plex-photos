@@ -10,7 +10,11 @@ import java.util.Set;
 /** Immutable snapshot of the validated plugin settings. */
 final class Config {
     final String serverUrl;
+    /** Plain token. The stored setting is encrypted; the plugin decrypts it before building this. */
     final String token;
+    /** Identifies this kiosk to Plex. Generated once per kiosk. */
+    final String clientId;
+    final boolean signIn;
     final boolean allowInsecureTls;
     /** Normalized SHA-256 fingerprint, or empty to trust the first certificate seen. */
     final String tlsFingerprint;
@@ -31,6 +35,8 @@ final class Config {
     private Config(Map<String, Object> s) {
         serverUrl = trimSlash(str(s, "serverUrl"));
         token = str(s, "token").trim();
+        clientId = str(s, "clientId").trim();
+        signIn = Boolean.TRUE.equals(s.get("signIn"));
         allowInsecureTls = Boolean.TRUE.equals(s.get("allowInsecureTls"));
         String pin = str(s, "tlsFingerprint").trim();
         tlsFingerprint = normalizeFingerprint(pin);

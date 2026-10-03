@@ -2,6 +2,7 @@
 package uk.dollow.kiosk.plexphotos;
 
 import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -11,7 +12,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +30,9 @@ import me.jxl.kiosk.plugins.PluginHost;
  *
  * <p>Lifecycle callbacks only flip flags and queue work. All network and image work runs on one
  * plugin-owned thread per session, so session state needs no further locking.
+ *
+ * <p>The stored settings hold the Plex token encrypted (see {@link TokenVault}). {@link #config}
+ * is built from them with the token decrypted, and is never saved.
  */
 public final class PlexPhotosPlugin implements KioskPlugin {
     static final String KEY = "plex";
@@ -36,10 +42,26 @@ public final class PlexPhotosPlugin implements KioskPlugin {
     private static final long RETRY_MS = 60_000L;
     private static final long REFRESH_RETRY_MS = 5 * 60_000L;
 
+    private static final long SIGN_IN_POLL_MS = 2_000L;
+
+    private final TokenVault vault;
     private final Object lock = new Object();
     private volatile Config config = Config.from(null);
-    private Map<String, Object> settings = new LinkedHashMap<>(); // guarded by lock
+    /** Why the stored token could not be decrypted, or empty. */
+    private volatile String tokenProblem = "";
+    private Map<String, Object> settings = new LinkedHashMap<>(); // as stored, guarded by lock
     private Session session; // guarded by lock
+    /** plex.tv, or a local stand-in in tests. */
+    String plexTv = PlexAccount.PLEX_TV;
+
+    public PlexPhotosPlugin() {
+        this(new TokenVault(new AndroidKeys()));
+    }
+
+    /** Package-private so tests can supply a key that is not in the Android Keystore. */
+    PlexPhotosPlugin(TokenVault vault) {
+        this.vault = vault;
+    }
 
     private interface Step { void run(Session s, int gen) throws Exception; }
 
@@ -48,14 +70,15 @@ public final class PlexPhotosPlugin implements KioskPlugin {
     @Override
     public void start(PluginHost host, Map<String, Object> settings) {
         Session s = new Session(host);
+        Map<String, Object> stored = copy(settings);
+        boolean changed = secure(host, stored);
         synchronized (lock) {
-            this.settings = copy(settings);
-            config = Config.from(settings);
+            this.settings = stored;
+            config = resolve(stored);
             session = s;
         }
-        s.publishMessage(config.configured()
-            ? "Loading photos from Plex\u2026"
-            : "Add the Plex server address and token in Plugin Manager \u203a Plex Photos.");
+        if (changed) save(host, stored);
+        s.publishMessage(config.configured() ? "Loading photos from Plex\u2026" : s.setupMessage(config));
         host.subscribe("screensaver.state");
         host.executeCommand("getDeviceInfo", Collections.<String, Object>emptyMap(), (ok, data, error) -> {
             if (ok && data instanceof Map) s.onDeviceInfo((Map<?, ?>) data);
@@ -64,20 +87,27 @@ public final class PlexPhotosPlugin implements KioskPlugin {
             if (ok) s.setActive(Boolean.TRUE.equals(data));
         });
         s.restart(null);
+        if (config.signIn) s.startSignIn();
         host.log("Plex Photos started");
     }
 
     @Override
     public void configure(Map<String, Object> settings) {
+        Session s = current();
+        Map<String, Object> stored = copy(settings);
+        boolean changed = s != null && secure(s.host, stored);
         Config prev;
-        Config next = Config.from(settings);
+        Config next;
         synchronized (lock) {
-            this.settings = copy(settings);
+            this.settings = stored;
             prev = config;
+            next = resolve(stored);
             config = next;
         }
-        Session s = current();
         if (s == null) return;
+        if (changed) save(s.host, stored);
+        if (next.signIn && !prev.signIn) s.startSignIn();
+        else if (!next.signIn && prev.signIn) s.cancelSignIn();
         final boolean source = !next.sourceKey().equals(prev.sourceKey());
         final boolean render = !next.renderKey().equals(prev.renderKey());
         final boolean pin = !next.tlsFingerprint.equals(prev.tlsFingerprint)
@@ -98,6 +128,8 @@ public final class PlexPhotosPlugin implements KioskPlugin {
             s.restart((ss, gen) -> ss.preloaded = null);
         } else if ("refresh".equals(command)) {
             s.restart((ss, gen) -> { ss.forceReload = true; ss.dropQueued(); ss.preloaded = null; });
+        } else if ("signin".equals(command)) {
+            s.startSignIn();
         } else {
             throw new IllegalArgumentException("Unknown command: " + command);
         }
@@ -105,9 +137,11 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
     @Override
     public void onEvent(String event, Map<String, Object> payload) {
-        if (!"ks.screensaver.state".equals(event)) return;
         Session s = current();
-        if (s != null) s.setActive(Boolean.TRUE.equals(payload.get("active")));
+        if (s == null) return;
+        if ("ks.screensaver.state".equals(event)) s.setActive(Boolean.TRUE.equals(payload.get("active")));
+        // The window's only button is Cancel. Closing the window just hides the code; sign-in carries on.
+        else if ("window.action".equals(event)) s.cancelSignIn();
     }
 
     @Override
@@ -119,6 +153,83 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
     private static Map<String, Object> copy(Map<String, Object> settings) {
         return settings == null ? new LinkedHashMap<String, Object>() : new LinkedHashMap<>(settings);
+    }
+
+    /**
+     * Encrypts a token pasted into the settings and gives the kiosk a client ID on first run.
+     * Returns true when the stored map changed and needs saving.
+     */
+    private boolean secure(PluginHost host, Map<String, Object> stored) {
+        boolean changed = false;
+        Object id = stored.get("clientId");
+        if (!(id instanceof String) || ((String) id).trim().isEmpty()) {
+            stored.put("clientId", UUID.randomUUID().toString());
+            changed = true;
+        }
+        Object raw = stored.get("token");
+        if (raw instanceof String) {
+            String token = ((String) raw).trim();
+            if (!token.isEmpty() && !TokenVault.isSealed(token)) {
+                String sealed = seal(host, token);
+                if (!sealed.equals(token)) {
+                    stored.put("token", sealed);
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    /** The encrypted token, or the plain one if this kiosk cannot encrypt. */
+    private String seal(PluginHost host, String token) {
+        try {
+            return vault.seal(token);
+        } catch (GeneralSecurityException | RuntimeException e) {
+            try {
+                host.log("Could not encrypt the Plex token: " + e.getMessage());
+                host.status("The Plex token is stored unencrypted because this kiosk could not encrypt it: " + e.getMessage(), true);
+            } catch (RuntimeException ignored) { }
+            return token;
+        }
+    }
+
+    /** The live config: the stored settings with the token decrypted. Call with the lock held. */
+    private Config resolve(Map<String, Object> stored) {
+        Object raw = stored.get("token");
+        if (!(raw instanceof String) || !TokenVault.isSealed(((String) raw).trim())) {
+            tokenProblem = "";
+            return Config.from(stored);
+        }
+        Map<String, Object> plain = copy(stored);
+        try {
+            plain.put("token", vault.open(((String) raw).trim()));
+            tokenProblem = "";
+        } catch (GeneralSecurityException | RuntimeException e) {
+            // Usually the Keystore key is gone because KS's data was cleared or it was reinstalled.
+            plain.put("token", "");
+            tokenProblem = "The saved Plex sign-in cannot be read on this kiosk. Turn on Sign in with Plex to sign in again.";
+        }
+        return Config.from(plain);
+    }
+
+    /** Saves changed settings and updates the live config. saveSettings does not call configure. */
+    private void persist(PluginHost host, Map<String, Object> changes) {
+        Map<String, Object> next;
+        synchronized (lock) {
+            next = copy(settings);
+            next.putAll(changes);
+            settings = next;
+            config = resolve(next);
+        }
+        save(host, next);
+    }
+
+    private static void save(PluginHost host, Map<String, Object> stored) {
+        try {
+            host.saveSettings(stored);
+        } catch (RuntimeException e) {
+            try { host.log("Could not save settings: " + e.getMessage()); } catch (RuntimeException ignored) { }
+        }
     }
 
     /** String.join needs API 26. */
@@ -159,6 +270,12 @@ public final class PlexPhotosPlugin implements KioskPlugin {
         private int screenH = 1080;
         private String lastError = "";
         private int matchedTotal;
+        private volatile String deviceName = "";
+        // Sign-in, worker thread only
+        private PlexAccount account;
+        private PlexAccount.Pin pin;
+        private long pinDeadline;
+        private ScheduledFuture<?> pinPoll;
 
         Session(PluginHost host) {
             this.host = host;
@@ -235,6 +352,8 @@ public final class PlexPhotosPlugin implements KioskPlugin {
         }
 
         void onDeviceInfo(Map<?, ?> info) {
+            Object name = info.get("name");
+            if (name instanceof String) deviceName = (String) name;
             Object w = info.get("screenWidth");
             Object h = info.get("screenHeight");
             if (!(w instanceof Number) || !(h instanceof Number)) return;
@@ -254,7 +373,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
         private void prepareIdle(int gen) throws IOException {
             Config cfg = config;
-            if (!cfg.configured()) { publishMessage("Add the Plex server address and token in Plugin Manager \u203a Plex Photos."); return; }
+            if (!cfg.configured()) { publishMessage(setupMessage(cfg)); return; }
             ensurePlaylist(cfg);
             if (playlist.isEmpty()) { publishMessage(emptyMessage(cfg)); return; }
             Slide s = take(cfg);
@@ -270,7 +389,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
         private void showNext(int gen) throws IOException {
             Config cfg = config;
-            if (!cfg.configured()) { publishMessage("Add the Plex server address and token in Plugin Manager \u203a Plex Photos."); return; }
+            if (!cfg.configured()) { publishMessage(setupMessage(cfg)); return; }
             ensurePlaylist(cfg);
             if (playlist.isEmpty()) { publishMessage(emptyMessage(cfg)); later(gen, RETRY_MS); return; }
 
@@ -302,7 +421,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
             boolean stale = now - loadedAt > cfg.refreshHours * 3_600_000L;
             if (sameSource && !forceReload && (!stale || now < retryAt)) return;
             try {
-                PlexClient c = new PlexClient(cfg);
+                PlexClient c = new PlexClient(cfg, deviceName);
                 client = c;
                 if (isClosed()) c.abort();
                 List<Photo> list = load(c, cfg);
@@ -366,20 +485,155 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
         /** Saves the certificate trusted on first use so later connections are pinned to it. */
         private void rememberFingerprint(String fingerprint) {
-            Map<String, Object> next;
-            synchronized (lock) {
-                next = new LinkedHashMap<>(settings);
-                next.put("tlsFingerprint", fingerprint);
-                settings = next;
-                // saveSettings does not call configure, so keep the live config in step.
-                config = Config.from(next);
-            }
+            persist(host, Collections.<String, Object>singletonMap("tlsFingerprint", fingerprint));
+            log("Pinned Plex server certificate " + fingerprint);
+        }
+
+        String setupMessage(Config cfg) {
+            if (!tokenProblem.isEmpty()) return tokenProblem;
+            PlexAccount.Pin p = pin;
+            if (p != null) return "Sign in to Plex: go to plex.tv/link and enter " + p.code;
+            if (cfg.token.isEmpty()) return "Turn on Sign in with Plex in Plugin Manager \u203a Plex Photos.";
+            return "Add the Plex server address in Plugin Manager \u203a Plex Photos.";
+        }
+
+        // -- sign-in (worker thread) --
+
+        void startSignIn() {
+            submit(this::beginSignIn);
+        }
+
+        void cancelSignIn() {
+            submit(() -> { if (pin != null) endSignIn("Sign-in cancelled.", false); });
+        }
+
+        private void submit(Runnable r) {
             try {
-                host.saveSettings(next);
-                log("Pinned Plex server certificate " + fingerprint);
-            } catch (RuntimeException e) {
-                log("Could not save certificate fingerprint: " + e.getMessage());
+                worker.execute(() -> {
+                    if (isClosed()) return;
+                    try {
+                        r.run();
+                    } catch (RuntimeException e) {
+                        log("Sign-in error: " + e.getMessage());
+                    }
+                });
+            } catch (RejectedExecutionException ignored) {
+                // Session already closed.
             }
+        }
+
+        private void beginSignIn() {
+            if (pin != null) { showCode(); return; }
+            account = new PlexAccount(plexTv, config.clientId, deviceName);
+            try {
+                pin = account.createPin();
+            } catch (IOException e) {
+                endSignIn("Could not reach plex.tv to sign in: " + e.getMessage(), true);
+                return;
+            }
+            pinDeadline = System.currentTimeMillis() + Math.max(60, Math.min(pin.expiresIn, 1800)) * 1000L;
+            log("Waiting for Plex sign-in");
+            showCode();
+            schedulePoll();
+        }
+
+        private void showCode() {
+            try {
+                host.showWindow("Sign in to Plex",
+                    "On your phone or computer, go to plex.tv/link and enter this code:\n\n" + pin.code
+                        + "\n\nSign in as the Plex user whose photos this kiosk should show.",
+                    "Cancel");
+            } catch (RuntimeException e) {
+                log("Could not show the sign-in window: " + e.getMessage());
+            }
+            status("Sign in to Plex: go to plex.tv/link and enter " + pin.code, false);
+            tile("warn", "Sign in: enter " + pin.code + " at plex.tv/link");
+            Config cfg = config;
+            if (!cfg.configured()) publishMessage(setupMessage(cfg));
+        }
+
+        private void schedulePoll() {
+            try {
+                pinPoll = worker.schedule(() -> {
+                    if (isClosed()) return;
+                    try {
+                        pollSignIn();
+                    } catch (RuntimeException e) {
+                        endSignIn("Sign-in failed: " + e.getMessage(), true);
+                    }
+                }, SIGN_IN_POLL_MS, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException ignored) {
+                // Session already closed.
+            }
+        }
+
+        private void pollSignIn() {
+            if (pin == null) return;
+            if (System.currentTimeMillis() > pinDeadline) {
+                endSignIn("The sign-in code expired. Turn on Sign in with Plex to get a new one.", true);
+                return;
+            }
+            String accountToken;
+            try {
+                accountToken = account.pinToken(pin.id);
+            } catch (PlexAccount.PinGoneException e) {
+                endSignIn("The sign-in code expired. Turn on Sign in with Plex to get a new one.", true);
+                return;
+            } catch (IOException e) {
+                // A network blip. Keep trying until the code expires.
+                schedulePoll();
+                return;
+            }
+            if (accountToken == null) schedulePoll();
+            else finishSignIn(accountToken);
+        }
+
+        private void finishSignIn(String accountToken) {
+            Config cfg = config;
+            PlexAccount.Choice choice = null;
+            String listError = "";
+            try {
+                choice = PlexAccount.choose(account.servers(accountToken), cfg.serverUrl, accountToken, account::identity);
+            } catch (IOException e) {
+                listError = "Could not list your Plex servers: " + e.getMessage() + ". ";
+            }
+            Map<String, Object> changes = new LinkedHashMap<>();
+            changes.put("token", seal(host, choice != null ? choice.token : accountToken));
+            if (choice != null && cfg.serverUrl.isEmpty()) changes.put("serverUrl", choice.serverUrl);
+            changes.put("signIn", false);
+            persist(host, changes);
+            clearSignIn();
+
+            String message;
+            boolean error = false;
+            if (choice != null && !choice.serverName.isEmpty()) {
+                message = "Signed in to Plex. Using " + choice.serverName + " at " + choice.serverUrl + ".";
+            } else if (!cfg.serverUrl.isEmpty()) {
+                message = listError + "Signed in to Plex.";
+            } else {
+                message = listError + "Signed in to Plex, but no server answered on this network. Enter the Server address.";
+                error = true;
+            }
+            log("Signed in to Plex");
+            status(message, error);
+            restart((ss, gen) -> { ss.forceReload = true; ss.dropQueued(); ss.preloaded = null; });
+        }
+
+        private void endSignIn(String message, boolean error) {
+            clearSignIn();
+            if (config.signIn) persist(host, Collections.<String, Object>singletonMap("signIn", false));
+            status(message, error);
+            Config cfg = config;
+            tile(cfg.configured() ? "" : "warn", cfg.configured() ? "Sign-in stopped" : "Not signed in to Plex");
+            if (!cfg.configured()) publishMessage(setupMessage(cfg));
+        }
+
+        private void clearSignIn() {
+            if (pinPoll != null) pinPoll.cancel(false);
+            pinPoll = null;
+            pin = null;
+            account = null;
+            try { host.hideWindow(); } catch (RuntimeException ignored) { }
         }
 
         private Photo pick(Config cfg) {

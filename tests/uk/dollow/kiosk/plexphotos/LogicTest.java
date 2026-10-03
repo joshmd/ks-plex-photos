@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package uk.dollow.kiosk.plexphotos;
 
+import java.security.GeneralSecurityException;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
@@ -8,12 +9,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
 
 /** Checks the classes that need neither Android nor a Plex server. Run with java -ea. */
 public final class LogicTest {
     private static final Calendar TODAY = new GregorianCalendar(2026, Calendar.OCTOBER, 3);
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         dates();
         fingerprints();
         collectorFiltersBeforeCap();
@@ -21,6 +24,7 @@ public final class LogicTest {
         collectorKeepsOldestInDateOrder();
         collectorSkipsDuplicates();
         slideFitsInlineLimit();
+        vault();
         System.out.println("LogicTest passed");
     }
 
@@ -101,6 +105,36 @@ public final class LogicTest {
         String doc = Html.slide(next, prev, cfg, 16 / 9.0);
         check(doc != null && Html.bytes(doc) <= Html.MAX_BYTES, "largest slide with crossfade fits");
         check(doc.contains("Holiday &lt;b&gt;"), "caption is escaped");
+    }
+
+    private static void vault() throws Exception {
+        KeyGenerator gen = KeyGenerator.getInstance("AES");
+        gen.init(256);
+        final SecretKey key = gen.generateKey();
+        final SecretKey other = gen.generateKey();
+        TokenVault v = new TokenVault(() -> key);
+        String token = "xYz-AbC123_plexToken";
+        String sealed = v.seal(token);
+        check(TokenVault.isSealed(sealed) && !sealed.contains(token), "token is encrypted");
+        check(token.equals(v.open(sealed)), "token decrypts");
+        check(!sealed.equals(v.seal(token)), "each encryption uses a fresh IV");
+        check(sealed.length() < TokenVault.MAX_SEALED, "fits a KS string setting");
+
+        char[] c = sealed.toCharArray();
+        c[c.length - 1] = c[c.length - 1] == '0' ? '1' : '0';
+        check(fails(v, new String(c)), "tampered token rejected");
+        check(fails(new TokenVault(() -> other), sealed), "another kiosk's key cannot decrypt");
+        check(fails(v, "enc1:zz"), "damaged token rejected");
+        check(!TokenVault.isSealed(token), "plain token detected");
+    }
+
+    private static boolean fails(TokenVault v, String sealed) {
+        try {
+            v.open(sealed);
+            return false;
+        } catch (GeneralSecurityException e) {
+            return true;
+        }
     }
 
     private static String base64(int rawBytes) {
