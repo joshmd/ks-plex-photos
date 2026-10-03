@@ -1,0 +1,26 @@
+name: Build plugin ZIP
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: plugin
+      - uses: actions/checkout@v4
+        with:
+          repository: jxlarrea/kiosk-satellite-plugin-hello-world
+          path: sdk
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: python3 sdk/tools/build.py plugin --android-platform 35
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plex-photos-plugin
+          path: plugin/dist/plex-photos-*.zip

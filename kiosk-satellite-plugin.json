@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "plex-photos",
+  "name": "Plex Photos",
+  "version": "1.0.0",
+  "minAndroidSdk": 24,
+  "entryClass": "uk.dollow.kiosk.plexphotos.PlexPhotosPlugin",
+  "description": "Photo-frame screensaver that pulls images straight from a Plex Media Server photo library, so you do not need Immich. Choose Plex Photos under Screensaver > Screensaver mode once the server address and token are set.",
+  "author": "Josh Dollow",
+  "license": "Apache-2.0",
+  "capabilities": ["screensaver", "host.read"],
+  "settings": [
+    {
+      "key": "serverUrl",
+      "type": "string",
+      "title": "Server address",
+      "default": "",
+      "group": "Plex server",
+      "description": "Base URL of Plex Media Server, for example http://192.168.1.20:32400. Use the LAN address, not app.plex.tv."
+    },
+    {
+      "key": "token",
+      "type": "string",
+      "title": "Plex token",
+      "default": "",
+      "group": "Plex server",
+      "description": "X-Plex-Token for an account or managed user that can see the photo library."
+    },
+    {
+      "key": "allowInsecureTls",
+      "type": "boolean",
+      "title": "Accept self-signed HTTPS",
+      "default": false,
+      "group": "Plex server",
+      "description": "Only needed for an https:// address whose certificate does not match, such as https://<LAN IP>:32400."
+    },
+    {
+      "key": "libraries",
+      "type": "string",
+      "title": "Photo libraries",
+      "default": "",
+      "group": "Photos",
+      "description": "Comma-separated library names. Leave blank to use every photo library on the server."
+    },
+    {
+      "key": "albums",
+      "type": "string",
+      "title": "Albums",
+      "default": "",
+      "group": "Photos",
+      "description": "Comma-separated album names, including sub-albums. Leave blank for the whole library."
+    },
+    {
+      "key": "takenWithin",
+      "type": "select",
+      "title": "Taken within",
+      "default": "Any time",
+      "options": ["Any time", "On this day", "Past month", "Past year", "Past 2 years", "Past 5 years", "Past 10 years"],
+      "group": "Photos",
+      "description": "Date filter on the photo's taken date. On this day matches the same date, plus or minus three days, in any year."
+    },
+    {
+      "key": "shuffle",
+      "type": "boolean",
+      "title": "Shuffle",
+      "default": true,
+      "group": "Photos",
+      "description": "Off plays photos in date order."
+    },
+    {
+      "key": "refreshHours",
+      "type": "number",
+      "title": "Refresh photo list (hours)",
+      "default": 6,
+      "min": 1,
+      "max": 48,
+      "step": 1,
+      "group": "Photos",
+      "description": "How often the photo list is re-read from Plex while the screensaver runs."
+    },
+    {
+      "key": "seconds",
+      "type": "number",
+      "title": "Seconds per photo",
+      "default": 20,
+      "min": 5,
+      "max": 600,
+      "step": 5,
+      "group": "Slideshow"
+    },
+    {
+      "key": "fill",
+      "type": "select",
+      "title": "Fill the screen",
+      "default": "Smart",
+      "options": ["Off", "Smart", "Always"],
+      "group": "Slideshow",
+      "description": "Smart crops only photos already close to the screen's shape. Others sit over a blurred copy of themselves."
+    },
+    {
+      "key": "transition",
+      "type": "select",
+      "title": "Transition",
+      "default": "Crossfade",
+      "options": ["Crossfade", "Fade from black", "None"],
+      "group": "Slideshow"
+    },
+    {
+      "key": "showInfo",
+      "type": "boolean",
+      "title": "Show date and album",
+      "default": true,
+      "group": "Slideshow"
+    },
+    {
+      "key": "infoCorner",
+      "type": "select",
+      "title": "Info corner",
+      "default": "Bottom left",
+      "options": ["Bottom left", "Bottom right", "Top left", "Top right"],
+      "group": "Slideshow",
+      "description": "Pick a corner your KS widgets and clock do not use."
+    },
+    {
+      "key": "maxEdge",
+      "type": "number",
+      "title": "Maximum image size (px)",
+      "default": 1920,
+      "min": 640,
+      "max": 2560,
+      "step": 80,
+      "group": "Slideshow",
+      "description": "Long-edge cap for images requested from Plex. Capped again at the screen's own resolution."
+    }
+  ],
+  "commands": [
+    { "id": "next", "title": "Next photo" },
+    { "id": "refresh", "title": "Reload photo list from Plex" }
+  ]
+}
