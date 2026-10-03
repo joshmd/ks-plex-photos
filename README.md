@@ -2,6 +2,8 @@
 
 A Kiosk Satellite plugin that adds a **Plex Photos** screensaver mode. It reads a Plex Media Server photo library directly, so there is no Immich server to run.
 
+[![Buy Me a Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/joshmd)
+
 KS still owns everything around the screensaver: idle timeout, schedules, brightness, motion/face/presence wake, widgets, At a Glance, the clock and Now Playing. The plugin only supplies the pictures.
 
 ## How it works
