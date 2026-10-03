@@ -11,7 +11,8 @@ Plugin screensavers render in a sandboxed WebView that cannot make network reque
 ## Install
 
 1. **Build the ZIP.** Either:
-   - Push this folder to a GitHub repository. The included workflow builds it on every push. Download the `plex-photos-plugin` artifact from the Actions run and unzip it once to get `plex-photos-1.0.0.zip`.
+   - **From a GitHub release (recommended).** Publish a release with a tag such as `v1.1.0`. The *Release* workflow tests, builds and attaches the ZIP, checksum and manifest that KS's **Install from GitHub** checks. Install from the repository in Plugin Manager and skip step 2.
+   - Push this folder to a GitHub repository. The *Build plugin ZIP* workflow builds it on every push. Download the `plex-photos-plugin` artifact from the Actions run and unzip it once to get `plex-photos-1.1.0.zip`.
    - Or build locally with JDK 17+ and an Android SDK (platform 35, build-tools 35):
      ```sh
      git clone https://github.com/jxlarrea/kiosk-satellite-plugin-hello-world ks-sdk
@@ -30,13 +31,26 @@ Plex Web > any photo > **...** > **Get Info** > **View XML**. The URL of the pag
 
 The token is stored in the plugin settings on the tablet and is visible in the remote admin. A Plex managed user restricted to the photo library limits what that token can reach.
 
+The token found through **View XML** belongs to the account you are signed in as. If that is the server owner, the token can manage your whole Plex account, not just this server, so prefer a restricted managed user and keep the KS remote admin locked down.
+
+### Connecting securely
+
+The token travels with every request. Over plain `http://` anyone on the LAN who can see the traffic can read it. In order of preference:
+
+1. **`plex.direct` HTTPS.** Plex issues a real certificate for each server. Use `https://192-168-1-20.<server-id>.plex.direct:32400`, with your LAN IP written with dashes. The full address is a `uri` in the `connections` list at `https://plex.tv/api/v2/resources?includeHttps=1&X-Plex-Token=...`. Leave **Accept self-signed HTTPS** off. Some routers block `plex.direct` names (DNS rebinding protection) and need an exception.
+2. **`https://<LAN IP>:32400` with Accept self-signed HTTPS.** The certificate does not match the IP, so it is pinned instead: the first certificate the plugin sees is saved in **Server certificate fingerprint** and every later connection must present the same one. Clear the fingerprint if the server's certificate legitimately changes. For full protection, paste the fingerprint yourself before first use.
+3. **Plain `http://`.** Simplest. Only on a network you trust.
+
+The plugin never follows redirects and refuses any path from Plex that would point at another host, so the token is only ever sent to the server address you entered.
+
 ## Settings
 
 | Group | Setting | Notes |
 | --- | --- | --- |
 | Plex server | Server address | LAN address, e.g. `http://192.168.1.20:32400`. Plain HTTP on the LAN is the simplest; set Plex's *Secure connections* to *Preferred*. |
 | | Plex token | See above. |
-| | Accept self-signed HTTPS | Only for `https://<LAN IP>:32400` style addresses. |
+| | Accept self-signed HTTPS | Only for `https://<LAN IP>:32400` style addresses. Pins the server's certificate. |
+| | Server certificate fingerprint | SHA-256, filled in on first connection. Clear it to trust a new certificate. |
 | Photos | Photo libraries | Comma-separated names. Blank means every photo library. |
 | | Albums | Comma-separated names, matched case-insensitively, sub-albums included. Blank means the whole library. |
 | | Taken within | Any time, On this day (same date in earlier years, plus or minus three days), past month, 1, 2, 5 or 10 years. Photos with no taken date are excluded by any date filter. |
@@ -55,7 +69,7 @@ The token is stored in the plugin settings on the tablet and is visible in the r
 ## Limits
 
 - Videos in photo libraries are skipped.
-- Up to 20,000 photos are listed per refresh.
+- Up to 20,000 matching photos are kept per refresh. Date filters are applied while listing, so the limit counts only photos that match. When more match, Shuffle keeps a random sample of all of them and date order keeps the oldest. Listing stops after 200,000 items.
 - The inline document cap means a 2560 px photo with heavy detail is recompressed harder than you might choose. 1920 px looks clean on typical wall tablets.
 - KS's built-in *next/previous slide* controls do not reach plugin screensavers. Use the plugin's **Next photo** command instead.
 

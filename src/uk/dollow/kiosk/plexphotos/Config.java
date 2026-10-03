@@ -12,6 +12,10 @@ final class Config {
     final String serverUrl;
     final String token;
     final boolean allowInsecureTls;
+    /** Normalized SHA-256 fingerprint, or empty to trust the first certificate seen. */
+    final String tlsFingerprint;
+    /** False when something was typed into the fingerprint setting that is not a SHA-256 value. */
+    final boolean tlsFingerprintValid;
     final Set<String> libraries;
     final Set<String> albums;
     final String takenWithin;
@@ -28,6 +32,9 @@ final class Config {
         serverUrl = trimSlash(str(s, "serverUrl"));
         token = str(s, "token").trim();
         allowInsecureTls = Boolean.TRUE.equals(s.get("allowInsecureTls"));
+        String pin = str(s, "tlsFingerprint").trim();
+        tlsFingerprint = normalizeFingerprint(pin);
+        tlsFingerprintValid = pin.isEmpty() || !tlsFingerprint.isEmpty();
         libraries = names(str(s, "libraries"));
         albums = names(str(s, "albums"));
         takenWithin = orDefault(str(s, "takenWithin"), "Any time");
@@ -57,6 +64,18 @@ final class Config {
     /** Settings that change how a downloaded photo is requested or drawn. */
     String renderKey() {
         return fill + "|" + transition + "|" + showInfo + "|" + infoCorner + "|" + maxEdge;
+    }
+
+    /** Uppercase hex SHA-256 with colons, or empty when the input is not a SHA-256 fingerprint. */
+    static String normalizeFingerprint(String s) {
+        String hex = s.replaceAll("[^0-9A-Fa-f]", "").toUpperCase(Locale.ROOT);
+        if (hex.length() != 64) return "";
+        StringBuilder sb = new StringBuilder(95);
+        for (int i = 0; i < 64; i += 2) {
+            if (i > 0) sb.append(':');
+            sb.append(hex, i, i + 2);
+        }
+        return sb.toString();
     }
 
     private static String str(Map<String, Object> s, String key) {

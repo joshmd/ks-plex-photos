@@ -5,8 +5,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,6 +38,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
     private final Object lock = new Object();
     private volatile Config config = Config.from(null);
+    private Map<String, Object> settings = new LinkedHashMap<>(); // guarded by lock
     private Session session; // guarded by lock
 
     private interface Step { void run(Session s, int gen) throws Exception; }
@@ -47,9 +47,12 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
     @Override
     public void start(PluginHost host, Map<String, Object> settings) {
-        config = Config.from(settings);
         Session s = new Session(host);
-        synchronized (lock) { session = s; }
+        synchronized (lock) {
+            this.settings = copy(settings);
+            config = Config.from(settings);
+            session = s;
+        }
         s.publishMessage(config.configured()
             ? "Loading photos from Plex\u2026"
             : "Add the Plex server address and token in Plugin Manager \u203a Plex Photos.");
@@ -66,16 +69,24 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
     @Override
     public void configure(Map<String, Object> settings) {
-        Config prev = config;
+        Config prev;
         Config next = Config.from(settings);
-        config = next;
+        synchronized (lock) {
+            this.settings = copy(settings);
+            prev = config;
+            config = next;
+        }
         Session s = current();
         if (s == null) return;
         final boolean source = !next.sourceKey().equals(prev.sourceKey());
         final boolean render = !next.renderKey().equals(prev.renderKey());
-        if (!source && !render && next.seconds == prev.seconds) return;
+        final boolean pin = !next.tlsFingerprint.equals(prev.tlsFingerprint)
+            || next.tlsFingerprintValid != prev.tlsFingerprintValid;
+        if (!source && !render && !pin && next.seconds == prev.seconds) return;
         s.restart((ss, gen) -> {
             if (source || render) { ss.dropQueued(); ss.preloaded = null; }
+            // Reconnect so the new fingerprint is what gets checked.
+            if (pin) ss.forceReload = true;
         });
     }
 
@@ -104,6 +115,10 @@ public final class PlexPhotosPlugin implements KioskPlugin {
         Session s;
         synchronized (lock) { s = session; session = null; }
         if (s != null) s.close();
+    }
+
+    private static Map<String, Object> copy(Map<String, Object> settings) {
+        return settings == null ? new LinkedHashMap<String, Object>() : new LinkedHashMap<>(settings);
     }
 
     /** String.join needs API 26. */
@@ -143,6 +158,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
         private int screenW = 1920;
         private int screenH = 1080;
         private String lastError = "";
+        private int matchedTotal;
 
         Session(PluginHost host) {
             this.host = host;
@@ -186,6 +202,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
         private synchronized boolean current(int gen) { return !closed && gen == generation; }
         private synchronized boolean isActive() { return active; }
+        private synchronized boolean isClosed() { return closed; }
 
         void close() {
             synchronized (this) {
@@ -196,6 +213,12 @@ public final class PlexPhotosPlugin implements KioskPlugin {
             worker.shutdownNow();
             PlexClient c = client;
             if (c != null) c.abort();
+            // KS expects plugin threads to have stopped when stop() returns. Its deadline is 3 s.
+            try {
+                worker.awaitTermination(1500, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         private void run(int gen, Step step) {
@@ -281,17 +304,23 @@ public final class PlexPhotosPlugin implements KioskPlugin {
             try {
                 PlexClient c = new PlexClient(cfg);
                 client = c;
+                if (isClosed()) c.abort();
                 List<Photo> list = load(c, cfg);
                 playlist = list;
                 loadedSource = cfg.sourceKey();
                 loadedAt = now;
                 forceReload = false;
-                cursor = 0;
                 if (!sameSource) queued = null;
+                cursor = sameSource && !cfg.shuffle ? resumeAfter(list) : 0;
                 lastError = "";
+                String learned = c.learnedFingerprint();
+                if (learned != null && cfg.tlsFingerprint.isEmpty()) rememberFingerprint(learned);
                 String n = String.format(Locale.UK, "%,d", list.size());
-                tile(list.isEmpty() ? "warn" : "on", list.isEmpty() ? "No matching photos" : n + " photos");
-                status(list.isEmpty() ? emptyMessage(cfg) : n + " photos loaded from Plex", list.isEmpty());
+                String loaded = matchedTotal > list.size()
+                    ? n + " of " + String.format(Locale.UK, "%,d", matchedTotal) + (cfg.shuffle ? " photos, random sample" : " photos, oldest first")
+                    : n + " photos";
+                tile(list.isEmpty() ? "warn" : "on", list.isEmpty() ? "No matching photos" : loaded);
+                status(list.isEmpty() ? emptyMessage(cfg) : loaded + " loaded from Plex", list.isEmpty());
             } catch (IOException e) {
                 lastError = String.valueOf(e.getMessage());
                 retryAt = now + REFRESH_RETRY_MS;
@@ -310,29 +339,47 @@ public final class PlexPhotosPlugin implements KioskPlugin {
                     ? "No photo libraries found on this server"
                     : "No photo library called " + join(cfg.libraries));
             }
-            List<Photo> raw = new ArrayList<>();
+            PhotoCollector found = new PhotoCollector(cfg.takenWithin, Calendar.getInstance(), cfg.shuffle, random);
             for (PlexClient.Section s : sections) {
-                if (cfg.albums.isEmpty()) c.allPhotos(s, raw);
-                else c.albumPhotos(s, cfg.albums, raw);
+                if (found.done()) break;
+                if (cfg.albums.isEmpty()) c.allPhotos(s, found);
+                else c.albumPhotos(s, cfg.albums, found);
             }
-            Calendar today = Calendar.getInstance();
-            Set<String> seen = new HashSet<>();
-            List<Photo> out = new ArrayList<>(raw.size());
-            for (Photo p : raw) {
-                if (!seen.add(p.ratingKey.isEmpty() ? p.partKey : p.ratingKey)) continue;
-                if (Dates.matches(p.date, cfg.takenWithin, today)) out.add(p);
+            matchedTotal = found.matched();
+            return found.result();
+        }
+
+        /**
+         * In date order, carries on after the last photo taken from the old list instead of
+         * going back to the oldest photo on every refresh.
+         */
+        private int resumeAfter(List<Photo> list) {
+            Photo anchor = queued != null ? queued.photo
+                : shown != null ? shown.photo
+                : preloaded != null ? preloaded.photo : null;
+            if (anchor == null) return 0;
+            for (int i = 0; i < list.size(); i++) {
+                if (PhotoCollector.DATE_ORDER.compare(list.get(i), anchor) > 0) return i;
             }
-            if (cfg.shuffle) {
-                Collections.shuffle(out, random);
-            } else {
-                Collections.sort(out, new Comparator<Photo>() {
-                    @Override public int compare(Photo a, Photo b) {
-                        int d = a.date.compareTo(b.date);
-                        return d != 0 ? d : a.title.compareTo(b.title);
-                    }
-                });
+            return list.size();
+        }
+
+        /** Saves the certificate trusted on first use so later connections are pinned to it. */
+        private void rememberFingerprint(String fingerprint) {
+            Map<String, Object> next;
+            synchronized (lock) {
+                next = new LinkedHashMap<>(settings);
+                next.put("tlsFingerprint", fingerprint);
+                settings = next;
+                // saveSettings does not call configure, so keep the live config in step.
+                config = Config.from(next);
             }
-            return out;
+            try {
+                host.saveSettings(next);
+                log("Pinned Plex server certificate " + fingerprint);
+            } catch (RuntimeException e) {
+                log("Could not save certificate fingerprint: " + e.getMessage());
+            }
         }
 
         private Photo pick(Config cfg) {

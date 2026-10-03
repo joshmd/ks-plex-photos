@@ -2,6 +2,8 @@ name: Build plugin ZIP
 on:
   push:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -9,9 +11,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: plugin
+      # Pinned: build.py runs with this job's access and compiles the plugin, so it must not change underneath us.
+      # Update deliberately after reviewing the SDK's changes.
       - uses: actions/checkout@v4
         with:
           repository: jxlarrea/kiosk-satellite-plugin-hello-world
+          ref: 8a070aca0815346fc2e68b29ed52e07c240d480e
           path: sdk
       - uses: actions/setup-java@v4
         with:
@@ -19,6 +24,7 @@ jobs:
           java-version: '21'
       - uses: android-actions/setup-android@v4
       - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: plugin/tools/test.sh
       - run: python3 sdk/tools/build.py plugin --android-platform 35
       - uses: actions/upload-artifact@v4
         with:

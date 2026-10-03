@@ -3,7 +3,7 @@
   "apiVersion": 1,
   "id": "plex-photos",
   "name": "Plex Photos",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minAndroidSdk": 24,
   "entryClass": "uk.dollow.kiosk.plexphotos.PlexPhotosPlugin",
   "description": "Photo-frame screensaver that pulls images straight from a Plex Media Server photo library, so you do not need Immich. Choose Plex Photos under Screensaver > Screensaver mode once the server address and token are set.",
@@ -33,7 +33,15 @@
       "title": "Accept self-signed HTTPS",
       "default": false,
       "group": "Plex server",
-      "description": "Only needed for an https:// address whose certificate does not match, such as https://<LAN IP>:32400."
+      "description": "Only needed for an https:// address whose certificate does not match, such as https://<LAN IP>:32400. The server's certificate is pinned: the first one seen is remembered below, and any other certificate is refused."
+    },
+    {
+      "key": "tlsFingerprint",
+      "type": "string",
+      "title": "Server certificate fingerprint",
+      "default": "",
+      "group": "Plex server",
+      "description": "SHA-256 fingerprint of the Plex server certificate, used with Accept self-signed HTTPS. Filled in automatically on first connection. Clear it to trust a new certificate."
     },
     {
       "key": "libraries",

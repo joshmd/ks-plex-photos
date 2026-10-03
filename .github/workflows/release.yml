@@ -1,0 +1,47 @@
+name: Release
+# Publishes the assets KS installs from GitHub: the ZIP, its checksum and the manifest, all
+# uploaded by github-actions[bot]. Create a GitHub release with a tag such as v1.1.0 to run it.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            echo 'Run this workflow on a release tag, not a branch.' >&2
+            exit 1
+          fi
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+      - uses: actions/checkout@v4
+        with:
+          path: plugin
+      # Pinned for the same reason as in build.yml.
+      - uses: actions/checkout@v4
+        with:
+          repository: jxlarrea/kiosk-satellite-plugin-hello-world
+          ref: 8a070aca0815346fc2e68b29ed52e07c240d480e
+          path: sdk
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: plugin/tools/test.sh
+      - run: python3 sdk/tools/build.py plugin --android-platform 35 --version "${GITHUB_REF_NAME#v}"
+      - name: Attach plugin assets to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            plugin/dist/*.zip \
+            plugin/dist/*.zip.sha256 \
+            plugin/dist/kiosk-satellite-plugin.json --clobber
