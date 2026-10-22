@@ -6,6 +6,7 @@
   "version": "1.2.1",
   "minAndroidSdk": 24,
   "entryClass": "uk.dollow.kiosk.plexphotos.PlexPhotosPlugin",
+  "icon": "icon.png",
   "description": "Photo-frame screensaver that shows photos from your own Plex Media Server photo library, so you do not need Immich. Turn on Sign in with Plex, then choose Plex Photos under Screensaver > Screensaver mode. Not affiliated with Plex, Inc.",
   "author": "Josh Dollow",
   "license": "Apache-2.0",
@@ -33,11 +34,11 @@
     },
     {
       "key": "token",
-      "type": "string",
-      "title": "Plex token (encrypted)",
+      "type": "secret",
+      "title": "Plex token",
       "default": "",
       "group": "Plex server",
-      "description": "Filled in by Sign in with Plex and stored encrypted with a key that never leaves this kiosk. You can also paste a token here; it is encrypted when saved."
+      "description": "Filled in by Sign in with Plex. Kiosk Satellite masks it, and the plugin also encrypts it with a key that never leaves this kiosk. You can paste a token here instead."
     },
     {
       "key": "allowInsecureTls",

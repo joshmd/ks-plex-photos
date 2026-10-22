@@ -15,8 +15,8 @@ jobs:
       # Update deliberately after reviewing the SDK's changes.
       - uses: actions/checkout@v4
         with:
-          repository: jxlarrea/kiosk-satellite-plugin-hello-world
-          ref: 8a070aca0815346fc2e68b29ed52e07c240d480e
+          repository: jxlarrea/kiosk-satellite-plugins
+          ref: 39007e55c7efe5bed56efcd8986973ad56a349ea
           path: sdk
       - uses: actions/setup-java@v4
         with:

@@ -71,13 +71,13 @@ public final class PlexPhotosPlugin implements KioskPlugin {
     public void start(PluginHost host, Map<String, Object> settings) {
         Session s = new Session(host);
         Map<String, Object> stored = copy(settings);
-        boolean changed = secure(host, stored);
+        Map<String, Object> changed = secure(host, stored);
         synchronized (lock) {
             this.settings = stored;
             config = resolve(stored);
             session = s;
         }
-        if (changed) save(host, stored);
+        save(host, changed, stored);
         s.publishMessage(config.configured() ? "Loading photos from Plex\u2026" : s.setupMessage(config));
         host.subscribe("screensaver.state");
         host.executeCommand("getDeviceInfo", Collections.<String, Object>emptyMap(), (ok, data, error) -> {
@@ -95,7 +95,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
     public void configure(Map<String, Object> settings) {
         Session s = current();
         Map<String, Object> stored = copy(settings);
-        boolean changed = s != null && secure(s.host, stored);
+        Map<String, Object> changed = s == null ? Collections.<String, Object>emptyMap() : secure(s.host, stored);
         Config prev;
         Config next;
         synchronized (lock) {
@@ -105,7 +105,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
             config = next;
         }
         if (s == null) return;
-        if (changed) save(s.host, stored);
+        save(s.host, changed, stored);
         if (next.signIn && !prev.signIn) s.startSignIn();
         else if (!next.signIn && prev.signIn) s.cancelSignIn();
         final boolean source = !next.sourceKey().equals(prev.sourceKey());
@@ -157,26 +157,23 @@ public final class PlexPhotosPlugin implements KioskPlugin {
 
     /**
      * Encrypts a token pasted into the settings and gives the kiosk a client ID on first run.
-     * Returns true when the stored map changed and needs saving.
+     * Updates the stored map and returns the settings that changed and need saving.
      */
-    private boolean secure(PluginHost host, Map<String, Object> stored) {
-        boolean changed = false;
+    private Map<String, Object> secure(PluginHost host, Map<String, Object> stored) {
+        Map<String, Object> changed = new LinkedHashMap<>();
         Object id = stored.get("clientId");
         if (!(id instanceof String) || ((String) id).trim().isEmpty()) {
-            stored.put("clientId", UUID.randomUUID().toString());
-            changed = true;
+            changed.put("clientId", UUID.randomUUID().toString());
         }
         Object raw = stored.get("token");
         if (raw instanceof String) {
             String token = ((String) raw).trim();
             if (!token.isEmpty() && !TokenVault.isSealed(token)) {
                 String sealed = seal(host, token);
-                if (!sealed.equals(token)) {
-                    stored.put("token", sealed);
-                    changed = true;
-                }
+                if (!sealed.equals(token)) changed.put("token", sealed);
             }
         }
+        stored.putAll(changed);
         return changed;
     }
 
@@ -221,12 +218,21 @@ public final class PlexPhotosPlugin implements KioskPlugin {
             settings = next;
             config = resolve(next);
         }
-        save(host, next);
+        save(host, changes, next);
     }
 
-    private static void save(PluginHost host, Map<String, Object> stored) {
+    /**
+     * Saves only the changed settings where KS supports it, so an edit made at the same time is
+     * not overwritten. Older KS versions only have saveSettings, which takes every setting.
+     */
+    private static void save(PluginHost host, Map<String, Object> changes, Map<String, Object> stored) {
+        if (changes.isEmpty()) return;
         try {
-            host.saveSettings(stored);
+            try {
+                host.updateSettings(changes);
+            } catch (UnsupportedOperationException e) {
+                host.saveSettings(stored);
+            }
         } catch (RuntimeException e) {
             try { host.log("Could not save settings: " + e.getMessage()); } catch (RuntimeException ignored) { }
         }

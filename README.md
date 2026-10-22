@@ -8,6 +8,8 @@ KS still owns everything around the screensaver: idle timeout, schedules, bright
 
 This plugin is not affiliated with, endorsed by or sponsored by Plex, Inc. Plex is a trademark of Plex, Inc.
 
+Needs a Kiosk Satellite version that supports `secret` plugin settings. Older versions refuse to install it, so update Kiosk Satellite first if Plugin Manager rejects the plugin.
+
 ## How it works
 
 Plugin screensavers render in a sandboxed WebView that cannot make network requests. The plugin's Java side therefore talks to Plex, asks the Plex photo transcoder for a JPEG sized to the screen, shrinks it further on the tablet if needed, and publishes each slide as a self-contained inline document (KS caps these at 512 KiB). The next photo is always downloaded while the current one is on screen, and one photo is pre-published while the kiosk is idle, so the screensaver opens on a picture with no network wait.
@@ -72,11 +74,14 @@ You can still paste a token into **Plex token** instead (Plex Web > any photo > 
 
 ### How the token is stored
 
-KS shows plugin settings in plain text, including in the remote admin. The plugin therefore stores the token encrypted with an AES key kept in this kiosk's Android Keystore. The key never leaves the tablet, so the saved value is useless if copied elsewhere.
+The token is protected twice:
 
-- This stops anyone who can see the settings from reading the token. It does not stop code running inside the KS app, such as another plugin, a modified KS or root access, from asking the Keystore to decrypt it. Keep the remote admin locked down, since it can install plugins.
-- If KS's app data is cleared or KS is reinstalled, the key is lost. The plugin then asks you to sign in again.
-- If a tablet cannot encrypt, the plugin says so in its status and stores the token unencrypted.
+- **Kiosk Satellite masks it.** **Plex token** is a secret setting. Plugin Manager and the remote admin show that a token is saved but never its value, and only let you replace or clear it. KS's APIs report it as `__set__`.
+- **The plugin encrypts it.** The saved value is encrypted with an AES key in this kiosk's Android Keystore. The key never leaves the tablet, so the stored value is useless if copied elsewhere.
+
+What this does not cover: code running inside the KS app, such as another plugin, a modified KS or root access, can still ask the Keystore to decrypt the token. Keep the remote admin locked down, since it can install plugins.
+
+If KS's app data is cleared or KS is reinstalled, the key is lost and the plugin asks you to sign in again. If a tablet cannot encrypt, the plugin says so in its status and relies on KS's masking alone.
 
 ### Connecting securely
 
@@ -94,7 +99,7 @@ The plugin never follows redirects and refuses any path from Plex that would poi
 | --- | --- | --- |
 | Plex server | Sign in with Plex | Shows a code for plex.tv/link. Switches itself off when done. |
 | | Server address | Blank to find it at sign-in, or e.g. `http://192.168.1.20:32400`. |
-| | Plex token (encrypted) | Filled in by sign-in. A pasted token is encrypted when saved. |
+| | Plex token | Secret, masked by KS. Filled in by sign-in. A pasted token is encrypted when saved. |
 | | Accept self-signed HTTPS | Only for `https://<LAN IP>:32400` style addresses. Pins the server's certificate. |
 | | Server certificate fingerprint | SHA-256, filled in on first connection. Clear it to trust a new certificate. |
 | | Device ID | Identifies this kiosk to Plex. Filled in automatically. |
