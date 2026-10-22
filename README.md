@@ -1,4 +1,4 @@
-# Plex Photos for Kiosk Satellite
+# Plex Photos Screensaver for Kiosk Satellite
 
 A Kiosk Satellite plugin that adds a **Plex Photos** screensaver mode. It reads a Plex Media Server photo library directly, so there is no Immich server to run.
 
@@ -6,26 +6,54 @@ A Kiosk Satellite plugin that adds a **Plex Photos** screensaver mode. It reads 
 
 KS still owns everything around the screensaver: idle timeout, schedules, brightness, motion/face/presence wake, widgets, At a Glance, the clock and Now Playing. The plugin only supplies the pictures.
 
+This plugin is not affiliated with, endorsed by or sponsored by Plex, Inc. Plex is a trademark of Plex, Inc.
+
 ## How it works
 
 Plugin screensavers render in a sandboxed WebView that cannot make network requests. The plugin's Java side therefore talks to Plex, asks the Plex photo transcoder for a JPEG sized to the screen, shrinks it further on the tablet if needed, and publishes each slide as a self-contained inline document (KS caps these at 512 KiB). The next photo is always downloaded while the current one is on screen, and one photo is pre-published while the kiosk is idle, so the screensaver opens on a picture with no network wait.
 
-## Install
+## Where your data goes
 
-1. **Build the ZIP.** Either:
-   - **From a GitHub release (recommended).** Publish a release with a tag such as `v1.2.0`. The *Release* workflow tests, builds and attaches the ZIP, checksum and manifest that KS's **Install from GitHub** checks. Install from the repository in Plugin Manager and skip step 2.
-   - Push this folder to a GitHub repository. The *Build plugin ZIP* workflow builds it on every push. Download the `plex-photos-plugin` artifact from the Actions run and unzip it once to get `plex-photos-1.2.0.zip`.
-   - Or build locally with JDK 17+ and an Android SDK (platform 35, build-tools 35):
-     ```sh
-     git clone https://github.com/jxlarrea/kiosk-satellite-plugin-hello-world ks-sdk
-     python3 ks-sdk/tools/build.py ./ks-plex-photos --android-platform 35
-     ```
-     The ZIP lands in `ks-plex-photos/dist/`.
-2. In KS, open **Plugin Manager > Developer Tools > Install from ZIP** (on the kiosk or the remote admin at `http://<tablet-ip>:2324`), pick the ZIP, confirm, and enable **Plex Photos**.
-3. On the plugin page, turn on **Sign in with Plex** and follow the code shown (see below).
-4. **Screensaver > Screensaver mode > Plex Photos (Plex Photos)**.
+The plugin connects to two places and nowhere else:
 
-To update, install the new ZIP over the old one. Settings carry over.
+- **Your Plex Media Server**, at the address in **Server address**. It lists your photo libraries and albums and downloads photos sized for the screen. Each request carries the kiosk's Plex token, its device ID and its KS device name.
+- **plex.tv**, only while **Sign in with Plex** is running: to get a sign-in code, check whether it has been entered and list the servers your account can reach. This sends the kiosk's device ID and KS device name, and after sign-in the token.
+
+Photos stay on the kiosk only as long as they are on screen or queued next. Nothing is sent to the plugin's author or any other service.
+
+## Installation
+
+### Community Plugins (Recommended)
+
+Plex Photos Screensaver is listed in [Community Plugins](https://kiosksatellite.com/plugins/). Use the button below to open it in your Kiosk Satellite and install it.
+
+[![Install in Kiosk Satellite](https://kiosksatellite.com/img/badges/plugin-add.svg)](https://kiosksatellite.com/redirect/plugin/?repository=joshmd/ks-plex-photos)
+
+Or search for `Plex Photos Screensaver` in **Settings > Plugin Manager > Browse plugins** in Kiosk Satellite.
+
+### Manual
+
+1. Open **Settings > Plugin Manager** in Kiosk Satellite and turn on **Enable Plugins**.
+2. Choose **Add plugin**, paste `https://github.com/joshmd/ks-plex-photos` and choose **Preview**.
+3. Review the plugin and choose **Trust and install**.
+
+### Set up
+
+1. Open **Plex Photos Screensaver** in Plugin Manager, turn on **Sign in with Plex** and follow the code shown (see below).
+2. Choose **Screensaver > Screensaver mode > Plex Photos (Plex Photos Screensaver)**.
+
+Updates arrive through Plugin Manager. Settings carry over.
+
+### Building from source
+
+Publishing a GitHub release with a tag such as `v1.2.1` runs the *Release* workflow, which tests, builds and attaches the ZIP, checksum and manifest. Every push also runs *Build plugin ZIP*, whose `plex-photos-plugin` artifact holds a ZIP for **Plugin Manager > Developer Tools > Install from ZIP**. To build locally with JDK 17+ and an Android SDK (platform 35, build-tools 35):
+
+```sh
+git clone https://github.com/jxlarrea/kiosk-satellite-plugin-hello-world ks-sdk
+python3 ks-sdk/tools/build.py ./ks-plex-photos --android-platform 35
+```
+
+The ZIP lands in `ks-plex-photos/dist/`.
 
 ### Signing in
 

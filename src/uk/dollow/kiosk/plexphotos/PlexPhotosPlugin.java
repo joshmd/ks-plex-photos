@@ -493,8 +493,8 @@ public final class PlexPhotosPlugin implements KioskPlugin {
             if (!tokenProblem.isEmpty()) return tokenProblem;
             PlexAccount.Pin p = pin;
             if (p != null) return "Sign in to Plex: go to plex.tv/link and enter " + p.code;
-            if (cfg.token.isEmpty()) return "Turn on Sign in with Plex in Plugin Manager \u203a Plex Photos.";
-            return "Add the Plex server address in Plugin Manager \u203a Plex Photos.";
+            if (cfg.token.isEmpty()) return "Turn on Sign in with Plex in Plugin Manager \u203a Plex Photos Screensaver.";
+            return "Add the Plex server address in Plugin Manager \u203a Plex Photos Screensaver.";
         }
 
         // -- sign-in (worker thread) --

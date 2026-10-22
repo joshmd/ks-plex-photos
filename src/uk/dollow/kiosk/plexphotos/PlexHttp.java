@@ -10,7 +10,7 @@ import java.net.HttpURLConnection;
 final class PlexHttp {
     static final String PRODUCT = "Kiosk Satellite Plex Photos";
     /** Reported to Plex only. Keep in step with the manifest version. */
-    static final String VERSION = "1.2.0";
+    static final String VERSION = "1.2.1";
 
     private PlexHttp() { }
 
