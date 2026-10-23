@@ -8,7 +8,7 @@ KS still owns everything around the screensaver: idle timeout, schedules, bright
 
 This plugin is not affiliated with, endorsed by or sponsored by Plex, Inc. Plex is a trademark of Plex, Inc.
 
-Needs a Kiosk Satellite version that supports `secret` plugin settings. Older versions refuse to install it, so update Kiosk Satellite first if Plugin Manager rejects the plugin.
+Needs Kiosk Satellite 2026.10.36 or newer. Older versions refuse to install it, so update Kiosk Satellite first.
 
 ## How it works
 
