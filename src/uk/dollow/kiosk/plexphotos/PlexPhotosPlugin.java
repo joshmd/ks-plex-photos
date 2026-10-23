@@ -748,7 +748,8 @@ public final class PlexPhotosPlugin implements KioskPlugin {
             String date = Html.prettyDate(s.photo.date, false);
             String what = date.isEmpty() ? s.photo.title : date;
             if (!s.photo.album.isEmpty()) what += " \u00b7 " + s.photo.album;
-            status(String.format(Locale.UK, "%,d photos. Showing %s", playlist.size(), what), false);
+            String hidden = hiddenTotal > 0 ? String.format(Locale.UK, ", %,d hidden", hiddenTotal) : "";
+            status(String.format(Locale.UK, "%,d photos%s. Showing %s", playlist.size(), hidden, what), false);
         }
 
         private String emptyMessage(Config cfg) {

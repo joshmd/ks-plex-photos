@@ -48,7 +48,7 @@ Updates arrive through Plugin Manager. Settings carry over.
 
 ### Building from source
 
-Publishing a GitHub release with a tag such as `v1.3.0` runs the *Release* workflow, which tests, builds and attaches the ZIP, checksum and manifest. Every push also runs *Build plugin ZIP*, whose `plex-photos-plugin` artifact holds a ZIP for **Plugin Manager > Developer Tools > Install from ZIP**. To build locally with JDK 17+ and an Android SDK (platform 35, build-tools 35):
+Publishing a GitHub release with a tag such as `v1.3.1` runs the *Release* workflow, which tests, builds and attaches the ZIP, checksum and manifest. Every push also runs *Build plugin ZIP*, whose `plex-photos-plugin` artifact holds a ZIP for **Plugin Manager > Developer Tools > Install from ZIP**. To build locally with JDK 17+ and an Android SDK (platform 35, build-tools 35):
 
 ```sh
 git clone https://github.com/jxlarrea/kiosk-satellite-plugins ks-sdk
@@ -121,7 +121,7 @@ The plugin never follows redirects and refuses any path from Plex that would poi
 
 - Plex playlists belong to one Plex user. The playlist must belong to the user this kiosk signed in as, which may be a restricted Home user rather than your own account.
 - If a named playlist cannot be found, the plugin shows nothing and says why, rather than showing the photos you asked to hide.
-- The plugin status shows how many photos were hidden.
+- The plugin status and its tile on the remote admin Overview show how many photos were hidden, for example "1,333 photos, 667 hidden".
 
 ## Commands
 
