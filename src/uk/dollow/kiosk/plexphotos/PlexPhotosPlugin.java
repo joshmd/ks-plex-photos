@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -276,6 +277,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
         private int screenH = 1080;
         private String lastError = "";
         private int matchedTotal;
+        private int hiddenTotal;
         private volatile String deviceName = "";
         // Sign-in, worker thread only
         private PlexAccount account;
@@ -444,6 +446,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
                 String loaded = matchedTotal > list.size()
                     ? n + " of " + String.format(Locale.UK, "%,d", matchedTotal) + (cfg.shuffle ? " photos, random sample" : " photos, oldest first")
                     : n + " photos";
+                if (hiddenTotal > 0) loaded += String.format(Locale.UK, ", %,d hidden", hiddenTotal);
                 tile(list.isEmpty() ? "warn" : "on", list.isEmpty() ? "No matching photos" : loaded);
                 status(list.isEmpty() ? emptyMessage(cfg) : loaded + " loaded from Plex", list.isEmpty());
             } catch (IOException e) {
@@ -451,7 +454,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
                 retryAt = now + REFRESH_RETRY_MS;
                 forceReload = false;
                 if (!sameSource) { playlist = new ArrayList<>(); loadedSource = null; }
-                tile("off", "Plex unreachable");
+                tile("off", "Could not load photos");
                 status("Could not load photos: " + lastError, true);
                 log("Load failed: " + lastError);
             }
@@ -465,12 +468,23 @@ public final class PlexPhotosPlugin implements KioskPlugin {
                     : "No photo library called " + join(cfg.libraries));
             }
             PhotoCollector found = new PhotoCollector(cfg.takenWithin, Calendar.getInstance(), cfg.shuffle, random);
+            if (!cfg.hidePlaylists.isEmpty()) {
+                Set<String> missing = new LinkedHashSet<>();
+                Set<String> hidden = c.playlistPhotos(cfg.hidePlaylists, missing);
+                // Refuse to load rather than show photos the user asked to keep off the screen.
+                if (!missing.isEmpty()) {
+                    throw new IOException("No photo playlist called " + join(missing)
+                        + " for the Plex user this kiosk signed in as, so nothing is shown");
+                }
+                found.hide(hidden);
+            }
             for (PlexClient.Section s : sections) {
                 if (found.done()) break;
                 if (cfg.albums.isEmpty()) c.allPhotos(s, found);
                 else c.albumPhotos(s, cfg.albums, found);
             }
             matchedTotal = found.matched();
+            hiddenTotal = found.hiddenCount();
             return found.result();
         }
 
@@ -738,7 +752,7 @@ public final class PlexPhotosPlugin implements KioskPlugin {
         }
 
         private String emptyMessage(Config cfg) {
-            if (!lastError.isEmpty() && playlist.isEmpty()) return "Could not reach Plex: " + lastError;
+            if (!lastError.isEmpty() && playlist.isEmpty()) return "Could not load photos: " + lastError;
             if (!cfg.albums.isEmpty()) return "No photos found in " + join(cfg.albums) + " for this date filter.";
             return "No photos match the current filters.";
         }

@@ -100,6 +100,41 @@ final class PlexClient {
         return out;
     }
 
+    /**
+     * Rating keys and part keys of every photo in the named photo playlists. Plex works out a
+     * smart playlist's contents when asked, so this is current as of the call. Names with no
+     * playlist are added to missing.
+     */
+    Set<String> playlistPhotos(Set<String> names, Set<String> missing) throws IOException {
+        Set<String> out = new HashSet<>();
+        Set<String> found = new HashSet<>();
+        for (JSONObject pl : items(container(getJson("/playlists?playlistType=photo")))) {
+            String name = pl.optString("title").toLowerCase(Locale.ROOT);
+            if (!names.contains(name)) continue;
+            found.add(name);
+            String path = pl.optString("key");
+            if (!path.startsWith("/")) path = "/playlists/" + enc(pl.optString("ratingKey")) + "/items";
+            String sep = path.indexOf('?') >= 0 ? "&" : "?";
+            for (int start = 0; start < PhotoCollector.MAX_SCANNED; start += PAGE) {
+                JSONObject mc = container(getJson(path + sep + "X-Plex-Container-Start=" + start + "&X-Plex-Container-Size=" + PAGE));
+                JSONArray items = mc.optJSONArray("Metadata");
+                int n = items == null ? 0 : items.length();
+                for (int i = 0; i < n; i++) {
+                    JSONObject m = items.optJSONObject(i);
+                    if (m == null) continue;
+                    String key = m.optString("ratingKey");
+                    if (!key.isEmpty()) out.add(key);
+                    Photo p = photo(m, "");
+                    if (p != null && !p.partKey.isEmpty()) out.add(p.partKey);
+                }
+                int total = mc.optInt("totalSize", -1);
+                if (n < PAGE || (total >= 0 && start + n >= total)) break;
+            }
+        }
+        for (String n : names) if (!found.contains(n)) missing.add(n);
+        return out;
+    }
+
     /** Every photo in a section, flattened across albums. */
     void allPhotos(Section section, PhotoCollector into) throws IOException {
         boolean any = false;

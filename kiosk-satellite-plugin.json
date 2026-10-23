@@ -3,7 +3,7 @@
   "apiVersion": 1,
   "id": "plex-photos",
   "name": "Plex Photos Screensaver",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "minAndroidSdk": 24,
   "entryClass": "uk.dollow.kiosk.plexphotos.PlexPhotosPlugin",
   "icon": "icon.png",
@@ -79,6 +79,14 @@
       "default": "",
       "group": "Photos",
       "description": "Comma-separated album names, including sub-albums. Leave blank for the whole library."
+    },
+    {
+      "key": "hidePlaylists",
+      "type": "string",
+      "title": "Hide playlists",
+      "default": "",
+      "group": "Photos",
+      "description": "Comma-separated photo playlist names, smart playlists included. Photos in them are never shown. The playlist must belong to the Plex user this kiosk signed in as."
     },
     {
       "key": "takenWithin",

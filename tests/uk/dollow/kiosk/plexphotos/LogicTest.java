@@ -23,6 +23,7 @@ public final class LogicTest {
         collectorSamplesBeyondCap();
         collectorKeepsOldestInDateOrder();
         collectorSkipsDuplicates();
+        collectorHidesPlaylistPhotos();
         slideFitsInlineLimit();
         vault();
         imageSizing();
@@ -96,6 +97,25 @@ public final class LogicTest {
     /** ImageFitter's budgets. Copied because ImageFitter needs Android to compile. */
     private static final int MAIN_BUDGET = 340 * 1024;
     private static final int THUMB_BUDGET = 28 * 1024;
+
+    private static void collectorHidesPlaylistPhotos() {
+        PhotoCollector c = new PhotoCollector("Any time", TODAY, true, new Random(1));
+        java.util.Set<String> hidden = new java.util.HashSet<>(Arrays.asList("2", "/library/parts/3/f.jpg"));
+        c.hide(hidden);
+        for (int i = 1; i <= 4; i++) c.add(photo(i, "2020-01-01"));
+        c.add(new Photo("", "/library/parts/3/f.jpg", "no rating key", "", "2020-01-01"));
+        List<Photo> out = c.result();
+        check(out.size() == 2 && c.hiddenCount() == 3, "hidden by rating key and part key (" + out.size() + " kept, " + c.hiddenCount() + " hidden)");
+        for (Photo p : out) check(!p.ratingKey.equals("2") && !p.ratingKey.equals("3"), "hidden photo not kept");
+
+        PhotoCollector capped = new PhotoCollector("Any time", TODAY, true, new Random(1));
+        java.util.Set<String> many = new java.util.HashSet<>();
+        for (int i = 0; i < 5000; i++) many.add(String.valueOf(i));
+        capped.hide(many);
+        for (int i = 0; i < PhotoCollector.MAX_PHOTOS + 5000; i++) capped.add(photo(i, "2020-01-01"));
+        check(capped.matched() == PhotoCollector.MAX_PHOTOS && capped.result().size() == PhotoCollector.MAX_PHOTOS,
+            "hidden photos do not use up the cap");
+    }
 
     private static void slideFitsInlineLimit() {
         Map<String, Object> s = new HashMap<>();

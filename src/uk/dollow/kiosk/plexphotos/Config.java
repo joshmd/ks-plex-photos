@@ -22,6 +22,8 @@ final class Config {
     final boolean tlsFingerprintValid;
     final Set<String> libraries;
     final Set<String> albums;
+    /** Photo playlists whose photos are never shown, smart playlists included. */
+    final Set<String> hidePlaylists;
     final String takenWithin;
     final boolean shuffle;
     final int refreshHours;
@@ -43,6 +45,7 @@ final class Config {
         tlsFingerprintValid = pin.isEmpty() || !tlsFingerprint.isEmpty();
         libraries = names(str(s, "libraries"));
         albums = names(str(s, "albums"));
+        hidePlaylists = names(str(s, "hidePlaylists"));
         takenWithin = orDefault(str(s, "takenWithin"), "Any time");
         shuffle = !Boolean.FALSE.equals(s.get("shuffle"));
         refreshHours = clamp(num(s, "refreshHours", 6), 1, 48);
@@ -64,7 +67,7 @@ final class Config {
 
     /** Settings that change which photos are in the list. */
     String sourceKey() {
-        return serverUrl + "|" + token + "|" + allowInsecureTls + "|" + libraries + "|" + albums + "|" + takenWithin + "|" + shuffle;
+        return serverUrl + "|" + token + "|" + allowInsecureTls + "|" + libraries + "|" + albums + "|" + hidePlaylists + "|" + takenWithin + "|" + shuffle;
     }
 
     /** Settings that change how a downloaded photo is requested or drawn. */

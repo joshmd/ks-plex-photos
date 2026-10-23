@@ -37,8 +37,10 @@ final class PhotoCollector {
     private final Set<String> seen = new HashSet<>();
     private final List<Photo> sample = new ArrayList<>();
     private final PriorityQueue<Photo> oldest = new PriorityQueue<>(64, Collections.reverseOrder(DATE_ORDER));
+    private Set<String> hidden = Collections.emptySet();
     private int scanned;
     private int matched;
+    private int hiddenCount;
 
     PhotoCollector(String within, Calendar today, boolean shuffle, Random random) {
         this.within = within;
@@ -50,6 +52,7 @@ final class PhotoCollector {
     void add(Photo p) {
         scanned++;
         if (!seen.add(p.ratingKey.isEmpty() ? p.partKey : p.ratingKey)) return;
+        if (hidden.contains(p.ratingKey) || hidden.contains(p.partKey)) { hiddenCount++; return; }
         if (!Dates.matches(p.date, within, today)) return;
         matched++;
         if (shuffle) {
@@ -63,6 +66,16 @@ final class PhotoCollector {
             oldest.add(p);
             if (oldest.size() > MAX_PHOTOS) oldest.poll();
         }
+    }
+
+    /** Never keep these photos, given by rating key or part key. */
+    void hide(Set<String> keys) {
+        hidden = keys;
+    }
+
+    /** Photos left out because they are in a hidden playlist. */
+    int hiddenCount() {
+        return hiddenCount;
     }
 
     boolean done() {
