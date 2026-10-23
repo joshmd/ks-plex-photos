@@ -36,7 +36,7 @@ import me.jxl.kiosk.plugins.PluginHost;
  */
 public final class PlexPhotosPlugin implements KioskPlugin {
     static final String KEY = "plex";
-    static final String TITLE = "Plex Photos";
+    static final String TITLE = "Plex Photos Screensaver";
     private static final String TILE = "plex";
     private static final int MAX_ATTEMPTS = 6;
     private static final long RETRY_MS = 60_000L;

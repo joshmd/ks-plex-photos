@@ -1,6 +1,6 @@
 # Plex Photos Screensaver for Kiosk Satellite
 
-A Kiosk Satellite plugin that adds a **Plex Photos** screensaver mode. It reads a Plex Media Server photo library directly, so there is no Immich server to run.
+A Kiosk Satellite plugin that adds a **Plex Photos Screensaver** screensaver mode. It reads a Plex Media Server photo library directly, so there is no Immich server to run.
 
 [![Buy Me a Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/joshmd)
 
@@ -42,16 +42,16 @@ Or search for `Plex Photos Screensaver` in **Settings > Plugin Manager > Browse 
 ### Set up
 
 1. Open **Plex Photos Screensaver** in Plugin Manager, turn on **Sign in with Plex** and follow the code shown (see below).
-2. Choose **Screensaver > Screensaver mode > Plex Photos (Plex Photos Screensaver)**.
+2. Choose **Screensaver > Screensaver mode > Plex Photos Screensaver (Plex Photos Screensaver)**.
 
 Updates arrive through Plugin Manager. Settings carry over.
 
 ### Building from source
 
-Publishing a GitHub release with a tag such as `v1.2.1` runs the *Release* workflow, which tests, builds and attaches the ZIP, checksum and manifest. Every push also runs *Build plugin ZIP*, whose `plex-photos-plugin` artifact holds a ZIP for **Plugin Manager > Developer Tools > Install from ZIP**. To build locally with JDK 17+ and an Android SDK (platform 35, build-tools 35):
+Publishing a GitHub release with a tag such as `v1.2.2` runs the *Release* workflow, which tests, builds and attaches the ZIP, checksum and manifest. Every push also runs *Build plugin ZIP*, whose `plex-photos-plugin` artifact holds a ZIP for **Plugin Manager > Developer Tools > Install from ZIP**. To build locally with JDK 17+ and an Android SDK (platform 35, build-tools 35):
 
 ```sh
-git clone https://github.com/jxlarrea/kiosk-satellite-plugin-hello-world ks-sdk
+git clone https://github.com/jxlarrea/kiosk-satellite-plugins ks-sdk
 python3 ks-sdk/tools/build.py ./ks-plex-photos --android-platform 35
 ```
 
@@ -121,6 +121,7 @@ The plugin never follows redirects and refuses any path from Plex that would poi
 ## Limits
 
 - Videos in photo libraries are skipped.
+- If Plex's photo transcoder fails, the plugin downloads the original file instead, up to 20 MB, and decodes it at no more than 8 megapixels. With **Fill the screen** set to **Always**, it is cropped to the screen's shape before resizing, so a very wide panorama shows a slightly softer centre.
 - Up to 20,000 matching photos are kept per refresh. Date filters are applied while listing, so the limit counts only photos that match. When more match, Shuffle keeps a random sample of all of them and date order keeps the oldest. Listing stops after 200,000 items.
 - The inline document cap means a 2560 px photo with heavy detail is recompressed harder than you might choose. 1920 px looks clean on typical wall tablets.
 - KS's built-in *next/previous slide* controls do not reach plugin screensavers. Use the plugin's **Next photo** command instead.

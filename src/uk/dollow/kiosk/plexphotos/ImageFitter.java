@@ -12,7 +12,8 @@ import java.io.IOException;
 
 /**
  * Shrinks a photo until its base64 form fits inside KS's 512 KiB inline screensaver document,
- * applying EXIF orientation so the browser and the bitmap agree on which way is up.
+ * applying EXIF orientation so the browser and the bitmap agree on which way is up. Decoding
+ * runs inside the Kiosk Satellite process, so decodes are capped (see {@link ImageMath}).
  */
 final class ImageFitter {
     /** Raw JPEG budget for the main image. Base64 adds a third, leaving room for HTML and the thumb. */
@@ -33,29 +34,36 @@ final class ImageFitter {
         int w = swap ? bounds.outHeight : bounds.outWidth;
         int h = swap ? bounds.outWidth : bounds.outHeight;
 
+        // Size of the whole image on screen: covering the box, or fitting inside it.
         double scale = cover
             ? Math.max((double) boxW / w, (double) boxH / h)
             : Math.min((double) boxW / w, (double) boxH / h);
         scale = Math.min(1.0, scale);
-        int tw = Math.max(1, (int) Math.round(w * scale));
-        int th = Math.max(1, (int) Math.round(h * scale));
+        int fullW = Math.max(1, (int) Math.round(w * scale));
+        int fullH = Math.max(1, (int) Math.round(h * scale));
 
         boolean upright = orientation <= 1;
         boolean jpeg = "image/jpeg".equals(bounds.outMimeType);
         if (jpeg && upright && scale >= 0.999 && src.length <= MAIN_BUDGET) {
             // Plex already sized it. Pass the bytes through untouched and only build the thumb.
-            Bitmap small = decode(src, bounds.outWidth, bounds.outHeight, THUMB_EDGE, THUMB_EDGE);
+            Bitmap small = decode(src, ImageMath.sampleSize(bounds.outWidth, bounds.outHeight, THUMB_EDGE, THUMB_EDGE));
             String thumb = small == null ? null : thumb(small);
             if (small != null) small.recycle();
             return new Slide(photo, b64(src), w, h, thumb);
         }
 
-        int decodeW = swap ? th : tw;
-        int decodeH = swap ? tw : th;
-        Bitmap bmp = decode(src, bounds.outWidth, bounds.outHeight, decodeW, decodeH);
+        int wantW = swap ? fullH : fullW;
+        int wantH = swap ? fullW : fullH;
+        Bitmap bmp = decode(src, ImageMath.sampleSize(bounds.outWidth, bounds.outHeight, wantW, wantH));
         if (bmp == null) throw new IOException("Could not decode image");
+        // The screen crops a covering photo to its own shape anyway. Cropping first keeps a wide
+        // panorama from becoming a bitmap many screens wide. Done before rotating, so the box is
+        // turned instead, which a centred crop allows.
+        if (cover) bmp = crop(bmp, swap ? boxH : boxW, swap ? boxW : boxH);
         bmp = rotate(bmp, orientation);
-        bmp = resize(bmp, tw, th);
+        double fit = ImageMath.fitScale(bmp.getWidth(), bmp.getHeight(), boxW, boxH);
+        bmp = resize(bmp, Math.max(1, (int) Math.round(bmp.getWidth() * fit)),
+            Math.max(1, (int) Math.round(bmp.getHeight() * fit)));
 
         byte[] out = null;
         for (int pass = 0; pass < 5; pass++) {
@@ -77,13 +85,19 @@ final class ImageFitter {
         return new Slide(photo, b64(out), fw, fh, thumb);
     }
 
-    private static Bitmap decode(byte[] src, int srcW, int srcH, int wantW, int wantH) {
-        int sample = 1;
-        while (srcW / (sample * 2) >= wantW && srcH / (sample * 2) >= wantH) sample *= 2;
+    private static Bitmap decode(byte[] src, int sample) {
         BitmapFactory.Options o = new BitmapFactory.Options();
         o.inSampleSize = sample;
         o.inPreferredConfig = Bitmap.Config.ARGB_8888;
         return BitmapFactory.decodeByteArray(src, 0, src.length, o);
+    }
+
+    private static Bitmap crop(Bitmap bmp, int boxW, int boxH) {
+        int[] r = ImageMath.coverCrop(bmp.getWidth(), bmp.getHeight(), boxW, boxH);
+        if (r[2] == bmp.getWidth() && r[3] == bmp.getHeight()) return bmp;
+        Bitmap out = Bitmap.createBitmap(bmp, r[0], r[1], r[2], r[3]);
+        if (out != bmp) bmp.recycle();
+        return out;
     }
 
     private static Bitmap resize(Bitmap bmp, int w, int h) {

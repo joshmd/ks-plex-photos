@@ -25,6 +25,7 @@ public final class LogicTest {
         collectorSkipsDuplicates();
         slideFitsInlineLimit();
         vault();
+        imageSizing();
         System.out.println("LogicTest passed");
     }
 
@@ -126,6 +127,37 @@ public final class LogicTest {
         check(fails(new TokenVault(() -> other), sealed), "another kiosk's key cannot decrypt");
         check(fails(v, "enc1:zz"), "damaged token rejected");
         check(!TokenVault.isSealed(token), "plain token detected");
+    }
+
+    private static void imageSizing() {
+        // The reviewer's case: a 30000 x 3000 panorama covering a 1920 x 1080 screen.
+        int sample = ImageMath.sampleSize(30000, 3000, 10800, 1080);
+        long decoded = (long) (30000 / sample) * (3000 / sample);
+        check(decoded <= ImageMath.MAX_DECODE_PIXELS, "panorama decode is capped (" + decoded + " px)");
+        int[] crop = ImageMath.coverCrop(30000 / sample, 3000 / sample, 1920, 1080);
+        check(crop[3] == 3000 / sample && Math.abs((double) crop[2] / crop[3] - 16 / 9.0) < 0.01, "panorama cropped to the screen's shape");
+        check(crop[0] == (30000 / sample - crop[2]) / 2 && crop[1] == 0, "crop is centred");
+
+        // An ordinary photo keeps enough detail: decoded at least as large as it is shown.
+        sample = ImageMath.sampleSize(4000, 3000, 1440, 1080);
+        check(4000 / sample >= 1440 && 3000 / sample >= 1080, "ordinary photo not over-shrunk");
+
+        // A photo shown sideways is cropped with the box turned, before rotation.
+        crop = ImageMath.coverCrop(3000, 4000, 1080, 1920);
+        check(crop[3] == 4000 && Math.abs((double) crop[2] / crop[3] - 1080 / 1920.0) < 0.01, "sideways photo cropped to turned box");
+
+        // A photo already the screen's shape is not cropped.
+        crop = ImageMath.coverCrop(3840, 2160, 1920, 1080);
+        check(crop[2] == 3840 && crop[3] == 2160, "matching photo not cropped");
+
+        for (int w = 500; w <= 60000; w += 3700) {
+            for (int h = 500; h <= 60000; h += 4100) {
+                int sz = ImageMath.sampleSize(w, h, Math.min(w, 1920), Math.min(h, 1080));
+                check((long) (w / sz) * (h / sz) <= ImageMath.MAX_DECODE_PIXELS, "every decode capped " + w + "x" + h);
+            }
+        }
+        check(ImageMath.fitScale(800, 600, 1920, 1080) == 1.0, "small photos are never enlarged");
+        check(Math.abs(ImageMath.fitScale(3840, 2160, 1920, 1080) - 0.5) < 1e-9, "large photos fit the box");
     }
 
     private static boolean fails(TokenVault v, String sealed) {

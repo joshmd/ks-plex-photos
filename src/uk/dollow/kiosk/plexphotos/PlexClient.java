@@ -30,7 +30,8 @@ import org.json.JSONObject;
 final class PlexClient {
     private static final int PAGE = 500;
     private static final int MAX_JSON_BYTES = 16 * 1024 * 1024;
-    private static final int MAX_IMAGE_BYTES = 40 * 1024 * 1024;
+    /** Downloads are held in memory in the KS process. Nothing a kiosk shows needs more. */
+    private static final int MAX_IMAGE_BYTES = 20 * 1024 * 1024;
     private static final int MAX_ALBUM_DEPTH = 8;
 
     private final String base;
